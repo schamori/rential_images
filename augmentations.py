@@ -99,6 +99,7 @@ if __name__ == "__main__":
 
     DATA = data_path["data_root"]
     IMG_DIR = f"{DATA}/Training/Training_Images"
+    
     sample = os.path.join(IMG_DIR, sorted(os.listdir(IMG_DIR))[0])
     orig = Image.open(sample).convert("RGB")
 

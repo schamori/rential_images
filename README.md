@@ -48,12 +48,12 @@ The main training script is `train.py`. It fine-tunes a pretrained ConvNeXtV2 mo
 
 To run a single experiment:
 ```bash
-uv run python train.py --config configs/exp1_weighted_loss.yaml
+python train.py --config configs/exp1_weighted_loss.yaml
 ```
 
 To run all experiments:
 ```bash
-uv run python train.py
+python train.py
 ```
 
 Experiment configs are stored in `configs/`. Each experiment overrides the base config in `configs/base.yaml`. Model weights are saved to `weights/`.
