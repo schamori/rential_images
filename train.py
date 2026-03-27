@@ -17,6 +17,10 @@ import pandas as pd
 
 CLASS_NAMES = ["No pathology", "Tessellated", "Diffuse CRA", "Patchy CRA", "Macular atrophy"]
 
+HERE       = os.path.dirname(os.path.abspath(__file__))
+WEIGHT_DIR = os.path.join(HERE, "weights")
+os.makedirs(WEIGHT_DIR, exist_ok=True)
+
 # ── Config ─────────────────────────────────────────────────────────────────────
 def load_cfg(path):
     base_path = os.path.join(os.path.dirname(path), "base.yaml")
@@ -105,14 +109,14 @@ def run_experiment(config_path, device):
         model = train_one(cfg, seed=42, device=device,
                           train_loader=train_loader, val_loader=val_loader,
                           class_weights=class_weights,
-                          save_path=f"{exp_name}.pt")
+                          save_path=os.path.join(WEIGHT_DIR, f"{exp_name}.pt"))
         m = evaluate(model, val_loader, device, get_loss(cfg, class_weights, device))
     else:
         # Train N models, average logits
         models = []
         for i, seed in enumerate(cfg["ensemble_seeds"][:cfg["ensemble_n"]]):
             print(f"\n--- Ensemble member {i+1}/{cfg['ensemble_n']} (seed={seed}) ---")
-            m_path = f"{exp_name}_seed{seed}.pt"
+            m_path = os.path.join(WEIGHT_DIR, f"{exp_name}_seed{seed}.pt")
             m = train_one(cfg, seed=seed, device=device,
                           train_loader=train_loader, val_loader=val_loader,
                           class_weights=class_weights, save_path=m_path)

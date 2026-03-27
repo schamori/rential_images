@@ -10,11 +10,15 @@ import matplotlib.gridspec as gridspec
 import numpy as np
 from PIL import Image
 
-DATA = "/home/moritz/Applied_ai_cw_2/Data"
-TRAIN_IMG = f"{DATA}/Training/Training_Images"
-LABELS_CSV = f"{DATA}/Training/Training_LabelsDemographic.csv"
-TEST_IMG = f"{DATA}/Testing/Testing_Images"
-TEST_CSV = f"{DATA}/Testing/Testing_LabelDemographic.csv"
+HERE      = os.path.dirname(os.path.abspath(__file__))
+PLOT_DIR  = os.path.join(HERE, "plots")
+os.makedirs(PLOT_DIR, exist_ok=True)
+
+DATA      = os.path.join(HERE, "Data")
+TRAIN_IMG = os.path.join(DATA, "Training", "Training_Images")
+LABELS_CSV = os.path.join(DATA, "Training", "Training_LabelsDemographic.csv")
+TEST_IMG  = os.path.join(DATA, "Testing", "Testing_Images")
+TEST_CSV  = os.path.join(DATA, "Testing", "Testing_LabelDemographic.csv")
 
 df = pd.read_csv(LABELS_CSV)
 df_test = pd.read_csv(TEST_CSV)
@@ -66,7 +70,7 @@ for i, (idx, r) in enumerate(ratios.items()):
     axes[1].text(i, r + 0.1, f"{r:.1f}×", ha="center", fontsize=9)
 
 plt.tight_layout()
-plt.savefig("class_distribution.png", dpi=120)
+plt.savefig(os.path.join(PLOT_DIR, "class_distribution.png"), dpi=120)
 plt.close()
 print("Saved class_distribution.png")
 print("\nTrain counts:")
@@ -90,7 +94,7 @@ for cls in range(5):
             ax.set_title(f"C{cls}: {CLASS_NAMES[cls]}\n(n={counts[cls]})", fontsize=8)
 
 plt.suptitle("2 examples per class  —  800×800 RGB fundus images", fontsize=11)
-plt.savefig("example_images.png", dpi=120, bbox_inches="tight")
+plt.savefig(os.path.join(PLOT_DIR, "example_images.png"), dpi=120, bbox_inches="tight")
 plt.close()
 print("Saved example_images.png")
 
