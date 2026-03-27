@@ -162,9 +162,10 @@ def main():
         configs = [args.config]
     else:
         # run every non-base config in configs/
+        cfg_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs")
         configs = sorted(
-            os.path.join("configs", f)
-            for f in os.listdir("configs")
+            os.path.join(cfg_dir, f)
+            for f in os.listdir(cfg_dir)
             if f.endswith(".yaml") and f != "base.yaml"
         )
         print(f"No --config specified. Running all {len(configs)} experiments:\n"
