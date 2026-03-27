@@ -1,0 +1,7 @@
+*
+!*.py
+!*.yaml
+!.gitignore
+!configs/
+configs/*
+!configs/*.yaml
