@@ -1,104 +1,157 @@
 """
-ConvNextV2 fine-tuning for Myopic Maculopathy grading (5 classes).
+Usage:
+    python train.py --config configs/base.yaml
+    python train.py --config configs/exp1_weighted_loss.yaml
+    python train.py --config configs/exp3_ensemble.yaml
 """
-import os
-import pandas as pd
+import argparse, copy, os
+import yaml
 import torch
-from torch.utils.data import Dataset, DataLoader, Subset
-from sklearn.model_selection import train_test_split
-from torchvision import transforms
-from PIL import Image
-from transformers import ConvNextV2ForImageClassification, AutoImageProcessor
+import numpy as np
+from sklearn.metrics import classification_report, f1_score, cohen_kappa_score
+from transformers import ConvNextV2ForImageClassification
+
+from dataset import get_loaders, get_class_weights, LABELS_CSV
+from losses import get_loss
+import pandas as pd
+
+CLASS_NAMES = ["No pathology", "Tessellated", "Diffuse CRA", "Patchy CRA", "Macular atrophy"]
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-DATA = "/home/moritz/Applied_ai_cw_2/Data"
-TRAIN_IMG = f"{DATA}/Training/Training_Images"
-LABELS_CSV = f"{DATA}/Training/Training_LabelsDemographic.csv"
-MODEL_ID = "facebook/convnextv2-tiny-1k-224"
-EPOCHS = 256
-BATCH = 128j
-LR = 3e-4
-NUM_CLASSES = 5
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+def load_cfg(path):
+    base_path = os.path.join(os.path.dirname(path), "base.yaml")
+    with open(base_path) as f:
+        cfg = yaml.safe_load(f)
+    with open(path) as f:
+        cfg.update(yaml.safe_load(f))   # experiment overrides base
+    return cfg
 
-# ── Dataset ────────────────────────────────────────────────────────────────────
-processor = AutoImageProcessor.from_pretrained(MODEL_ID)
-
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=processor.image_mean, std=processor.image_std),
-])
-
-class FundusDataset(Dataset):
-    def __init__(self, df, img_dir):
-        self.df = df.reset_index(drop=True)
-        self.img_dir = img_dir
-
-    def __len__(self):
-        return len(self.df)
-
-    def __getitem__(self, i):
-        row = self.df.iloc[i]
-        img = Image.open(os.path.join(self.img_dir, row["image"])).convert("RGB")
-        return transform(img), int(row["myopic_maculopathy_grade"])
-
-df = pd.read_csv(LABELS_CSV)
-dataset = FundusDataset(df, TRAIN_IMG)
-
-labels = df["myopic_maculopathy_grade"].values
-train_idx, val_idx = train_test_split(
-    range(len(df)), test_size=0.15, stratify=labels, random_state=42
-)
-train_ds, val_ds = Subset(dataset, train_idx), Subset(dataset, val_idx)
-train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True,  num_workers=4)
-val_loader   = DataLoader(val_ds,   batch_size=BATCH, shuffle=False, num_workers=4)
-
-# ── Model ──────────────────────────────────────────────────────────────────────
-model = ConvNextV2ForImageClassification.from_pretrained(
-    MODEL_ID,
-    num_labels=NUM_CLASSES,
-    ignore_mismatched_sizes=True,   # replace classifier head
-).to(DEVICE)
-
-optimiser = torch.optim.AdamW(model.parameters(), lr=LR)
-criterion = torch.nn.CrossEntropyLoss()
-
-PATIENCE = 35
-best_acc, patience_left = 0.0, PATIENCE
-
-# ── Training loop ──────────────────────────────────────────────────────────────
-for epoch in range(1, EPOCHS + 1):
-    model.train()
-    train_loss = 0
-    for imgs, labels in train_loader:
-        imgs, labels = imgs.to(DEVICE), labels.to(DEVICE)
-        loss = criterion(model(imgs).logits, labels)
-        optimiser.zero_grad()
-        loss.backward()
-        optimiser.step()
-        train_loss += loss.item()
-
+# ── Metrics ────────────────────────────────────────────────────────────────────
+def evaluate(model, loader, device, criterion):
     model.eval()
-    correct = total = 0
+    all_preds, all_labels = [], []
+    total_loss = 0
     with torch.no_grad():
-        for imgs, labels in val_loader:
-            imgs, labels = imgs.to(DEVICE), labels.to(DEVICE)
-            preds = model(imgs).logits.argmax(1)
-            correct += (preds == labels).sum().item()
-            total += len(labels)
+        for imgs, labels in loader:
+            imgs, labels = imgs.to(device), labels.to(device)
+            logits = model(imgs).logits
+            total_loss += criterion(logits, labels).item()
+            all_preds.extend(logits.argmax(1).cpu().tolist())
+            all_labels.extend(labels.cpu().tolist())
 
-    val_acc = correct / total
-    print(f"Epoch {epoch}/{EPOCHS}  loss={train_loss/len(train_loader):.4f}  val_acc={val_acc:.3f}")
+    acc    = sum(p == l for p, l in zip(all_preds, all_labels)) / len(all_labels)
+    f1_mac = f1_score(all_labels, all_preds, average="macro",    zero_division=0)
+    f1_wt  = f1_score(all_labels, all_preds, average="weighted", zero_division=0)
+    kappa  = cohen_kappa_score(all_labels, all_preds, weights="quadratic")
+    report = classification_report(all_labels, all_preds, target_names=CLASS_NAMES,
+                                   zero_division=0)
+    return {
+        "loss": total_loss / len(loader),
+        "acc": acc, "f1_macro": f1_mac, "f1_weighted": f1_wt, "kappa": kappa,
+        "report": report,
+    }
 
-    if val_acc > best_acc:
-        best_acc = val_acc
-        patience_left = PATIENCE
-        torch.save(model.state_dict(), "convnextv2_mmac.pt")
+# ── Single training run ────────────────────────────────────────────────────────
+def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_path):
+    torch.manual_seed(seed)
+    model = ConvNextV2ForImageClassification.from_pretrained(
+        cfg["model_id"], num_labels=cfg["num_classes"], ignore_mismatched_sizes=True
+    ).to(device)
+
+    optimiser = torch.optim.AdamW(model.parameters(), lr=cfg["lr"])
+    criterion = get_loss(cfg, class_weights, device)
+    best_acc, patience_left = 0.0, cfg["patience"]
+
+    for epoch in range(1, cfg["epochs"] + 1):
+        model.train()
+        train_loss = 0
+        for imgs, labels in train_loader:
+            imgs, labels = imgs.to(device), labels.to(device)
+            loss = criterion(model(imgs).logits, labels)
+            optimiser.zero_grad(); loss.backward(); optimiser.step()
+            train_loss += loss.item()
+
+        m = evaluate(model, val_loader, device, criterion)
+        print(f"  Epoch {epoch:3d}/{cfg['epochs']}  "
+              f"train_loss={train_loss/len(train_loader):.4f}  "
+              f"val_loss={m['loss']:.4f}  acc={m['acc']:.3f}  "
+              f"f1_macro={m['f1_macro']:.3f}  kappa={m['kappa']:.3f}")
+
+        if m["acc"] > best_acc:
+            best_acc = m["acc"]
+            patience_left = cfg["patience"]
+            torch.save(model.state_dict(), save_path)
+        else:
+            patience_left -= 1
+            if patience_left == 0:
+                print(f"  Early stopping at epoch {epoch} — best acc={best_acc:.3f}")
+                break
+
+    model.load_state_dict(torch.load(save_path, map_location=device))
+    return model
+
+# ── Main ───────────────────────────────────────────────────────────────────────
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="configs/base.yaml")
+    args = parser.parse_args()
+
+    cfg = load_cfg(args.config)
+    exp_name = os.path.splitext(os.path.basename(args.config))[0]
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"\n=== {exp_name} | device={device} ===")
+    print(yaml.dump(cfg, default_flow_style=False))
+
+    train_loader, val_loader, df = get_loaders(cfg)
+    class_weights = get_class_weights(df)
+
+    if not cfg["ensemble"]:
+        model = train_one(cfg, seed=42, device=device,
+                          train_loader=train_loader, val_loader=val_loader,
+                          class_weights=class_weights,
+                          save_path=f"{exp_name}.pt")
+        m = evaluate(model, val_loader, device, get_loss(cfg, class_weights, device))
     else:
-        patience_left -= 1
-        if patience_left == 0:
-            print(f"Early stopping — best val_acc={best_acc:.3f}")
-            break
+        # Train N models, average logits
+        models = []
+        for i, seed in enumerate(cfg["ensemble_seeds"][:cfg["ensemble_n"]]):
+            print(f"\n--- Ensemble member {i+1}/{cfg['ensemble_n']} (seed={seed}) ---")
+            m_path = f"{exp_name}_seed{seed}.pt"
+            m = train_one(cfg, seed=seed, device=device,
+                          train_loader=train_loader, val_loader=val_loader,
+                          class_weights=class_weights, save_path=m_path)
+            models.append(m)
 
-print(f"Saved best model (val_acc={best_acc:.3f})")
+        # Ensemble evaluation
+        for mod in models:
+            mod.eval()
+        all_preds, all_labels = [], []
+        criterion = get_loss(cfg, class_weights, device)
+        with torch.no_grad():
+            for imgs, labels in val_loader:
+                imgs = imgs.to(device)
+                avg_logits = sum(mod(imgs).logits for mod in models) / len(models)
+                all_preds.extend(avg_logits.argmax(1).cpu().tolist())
+                all_labels.extend(labels.tolist())
+
+        from sklearn.metrics import classification_report, f1_score, cohen_kappa_score
+        m = {
+            "acc":         sum(p == l for p, l in zip(all_preds, all_labels)) / len(all_labels),
+            "f1_macro":    f1_score(all_labels, all_preds, average="macro",    zero_division=0),
+            "f1_weighted": f1_score(all_labels, all_preds, average="weighted", zero_division=0),
+            "kappa":       cohen_kappa_score(all_labels, all_preds, weights="quadratic"),
+            "report":      classification_report(all_labels, all_preds,
+                                                 target_names=CLASS_NAMES, zero_division=0),
+        }
+
+    print(f"\n{'='*60}")
+    print(f"Final results — {exp_name}")
+    print(f"  Accuracy:    {m['acc']:.4f}")
+    print(f"  F1 macro:    {m['f1_macro']:.4f}")
+    print(f"  F1 weighted: {m['f1_weighted']:.4f}")
+    print(f"  QW Kappa:    {m['kappa']:.4f}")
+    print(f"\nPer-class report:\n{m['report']}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,21 @@
+# Base config — default values inherited by all experiments
+model_id: "facebook/convnextv2-tiny-1k-224"
+img_size: 224
+num_classes: 5
+epochs: 256
+batch_size: 128
+lr: 3.0e-4
+patience: 35
+
+# Loss: "ce" | "weighted_ce" | "focal"
+loss: "ce"
+use_class_weights: false
+focal_gamma: 2.0
+
+# Sampler: "default" | "weighted" (oversample) | "undersample"
+sampler: "default"
+
+# Ensemble: train N models with different seeds and average logits
+ensemble: false
+ensemble_n: 3
+ensemble_seeds: [42, 7, 123]
