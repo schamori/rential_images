@@ -9,6 +9,7 @@ import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
 from PIL import Image, ImageFilter
+import yaml
 
 
 # ── Custom transforms ─────────────────────────────────────────────────────────
@@ -92,8 +93,12 @@ def get_val_transform(img_size=224):
 if __name__ == "__main__":
     import os
     import matplotlib.pyplot as plt
+    
+    with open("./data.yaml") as f:
+        data_path = yaml.safe_load(f)
 
-    IMG_DIR = "/home/moritz/Applied_ai_cw_2/Data/Training/Training_Images"
+    DATA = data_path["data_root"]
+    IMG_DIR = f"{DATA}/Training/Training_Images"
     sample = os.path.join(IMG_DIR, sorted(os.listdir(IMG_DIR))[0])
     orig = Image.open(sample).convert("RGB")
 

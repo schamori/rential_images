@@ -1,4 +1,5 @@
 import os
+import yaml
 import numpy as np
 import pandas as pd
 import torch
@@ -8,10 +9,12 @@ from sklearn.model_selection import train_test_split
 
 from augmentations import get_train_transform, get_val_transform
 
-DATA = "/home/moritz/Applied_ai_cw_2/Data"
+with open("./data.yaml") as f:
+    data_path = yaml.safe_load(f)
+
+DATA = data_path["data_root"]
 TRAIN_IMG = f"{DATA}/Training/Training_Images"
 LABELS_CSV = f"{DATA}/Training/Training_LabelsDemographic.csv"
-
 
 class FundusDataset(Dataset):
     def __init__(self, df, img_dir, img_size=224, augment=False):
