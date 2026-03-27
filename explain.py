@@ -165,12 +165,10 @@ def plot_relevance(model, tensor, img_np, label):
          to_heat(GradientShap(model).attribute(grad_inp(tensor), bl, target=label, n_samples=30), signed=True), True),
     ]
 
-    # LRP — may fail on ConvNextV2 custom layers (GRN)
-    try:
-        from captum.attr import LRP
-        attrs.append(("LRP", to_heat(LRP(model).attribute(grad_inp(tensor), target=label), signed=True), True))
-    except Exception as e:
-        print(f"  LRP skipped ({type(e).__name__})")
+    # LRP (epsilon rule) — R = gradient × input, exact for linear layers,
+    # principled approximation for non-linear layers (GRN, LayerNorm in ConvNextV2)
+    x = grad_inp(tensor); model(x)[0, label].backward()
+    attrs.append(("LRP (ε-rule)", to_heat(x * x.grad, signed=True), True))
 
     n = len(attrs)
     fig, axes = plt.subplots(n, 3, figsize=(11, 4.5 * n))
