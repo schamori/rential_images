@@ -91,15 +91,11 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
     return model
 
 # ── Main ───────────────────────────────────────────────────────────────────────
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="configs/base.yaml")
-    args = parser.parse_args()
-
-    cfg = load_cfg(args.config)
-    exp_name = os.path.splitext(os.path.basename(args.config))[0]
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"\n=== {exp_name} | device={device} ===")
+def run_experiment(config_path, device):
+    cfg = load_cfg(config_path)
+    exp_name = os.path.splitext(os.path.basename(config_path))[0]
+    print(f"\n{'='*60}")
+    print(f"=== {exp_name} | device={device} ===")
     print(yaml.dump(cfg, default_flow_style=False))
 
     train_loader, val_loader, df = get_loaders(cfg)
@@ -151,6 +147,42 @@ def main():
     print(f"  F1 weighted: {m['f1_weighted']:.4f}")
     print(f"  QW Kappa:    {m['kappa']:.4f}")
     print(f"\nPer-class report:\n{m['report']}")
+    return exp_name, m
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default=None,
+                        help="Path to a config yaml. Omit to run all configs in configs/")
+    args = parser.parse_args()
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if args.config:
+        configs = [args.config]
+    else:
+        # run every non-base config in configs/
+        configs = sorted(
+            os.path.join("configs", f)
+            for f in os.listdir("configs")
+            if f.endswith(".yaml") and f != "base.yaml"
+        )
+        print(f"No --config specified. Running all {len(configs)} experiments:\n"
+              + "\n".join(f"  {c}" for c in configs))
+
+    summary = []
+    for cfg_path in configs:
+        exp_name, m = run_experiment(cfg_path, device)
+        summary.append((exp_name, m))
+
+    if len(summary) > 1:
+        print(f"\n{'='*60}")
+        print("SUMMARY")
+        print(f"{'Experiment':<30} {'Acc':>6} {'F1mac':>6} {'F1wt':>6} {'Kappa':>6}")
+        print("-" * 60)
+        for name, m in summary:
+            print(f"{name:<30} {m['acc']:>6.3f} {m['f1_macro']:>6.3f} "
+                  f"{m['f1_weighted']:>6.3f} {m['kappa']:>6.3f}")
 
 
 if __name__ == "__main__":
