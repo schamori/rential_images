@@ -3,38 +3,21 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader, Subset, WeightedRandomSampler
-from torchvision import transforms
 from PIL import Image
 from sklearn.model_selection import train_test_split
+
+from augmentations import get_train_transform, get_val_transform
 
 DATA = "/home/moritz/Applied_ai_cw_2/Data"
 TRAIN_IMG = f"{DATA}/Training/Training_Images"
 LABELS_CSV = f"{DATA}/Training/Training_LabelsDemographic.csv"
-
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD  = [0.229, 0.224, 0.225]
 
 
 class FundusDataset(Dataset):
     def __init__(self, df, img_dir, img_size=224, augment=False):
         self.df = df.reset_index(drop=True)
         self.img_dir = img_dir
-
-        if augment:
-            self.transform = transforms.Compose([
-                transforms.Resize((img_size, img_size)),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomVerticalFlip(),
-                transforms.ColorJitter(brightness=0.2, contrast=0.2),
-                transforms.ToTensor(),
-                transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-            ])
-        else:
-            self.transform = transforms.Compose([
-                transforms.Resize((img_size, img_size)),
-                transforms.ToTensor(),
-                transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-            ])
+        self.transform = get_train_transform(img_size) if augment else get_val_transform(img_size)
 
     def __len__(self):
         return len(self.df)
