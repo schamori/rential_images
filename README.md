@@ -1,1 +1,1 @@
-# rential_images
+# retinal_images
