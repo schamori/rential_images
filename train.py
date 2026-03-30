@@ -23,15 +23,17 @@ os.makedirs(WEIGHT_DIR, exist_ok=True)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 def load_cfg(path):
+    """Load a config yaml, with the option to override a base.yaml."""
     base_path = os.path.join(os.path.dirname(path), "base.yaml")
     with open(base_path) as f:
-        cfg = yaml.safe_load(f)
+        cfg = yaml.safe_load(f) # load base config
     with open(path) as f:
         cfg.update(yaml.safe_load(f))   # experiment overrides base
     return cfg
 
 # ── Metrics ────────────────────────────────────────────────────────────────────
 def evaluate(model, loader, device, criterion):
+    """Evaluate model on a validation set, returning loss, acc, F1, kappa, and report."""
     model.eval()
     all_preds, all_labels = [], []
     total_loss = 0
@@ -57,6 +59,7 @@ def evaluate(model, loader, device, criterion):
 
 # ── Single training run ────────────────────────────────────────────────────────
 def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_path):
+    """Train a single model, returning the best one after early stopping."""
     torch.manual_seed(seed)
     model = ConvNextV2ForImageClassification.from_pretrained(
         cfg["model_id"], num_labels=cfg["num_classes"], ignore_mismatched_sizes=True
@@ -96,6 +99,7 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 def run_experiment(config_path, device):
+    """Run a single experiment specified by a config yaml, returning results."""
     cfg = load_cfg(config_path)
     exp_name = os.path.splitext(os.path.basename(config_path))[0]
     print(f"\n{'='*60}")
