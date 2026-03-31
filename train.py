@@ -170,11 +170,11 @@ def main():
         configs = [args.config]
     else:
         # run every non-base config in configs/
+        import glob as _glob
         cfg_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs")
         configs = sorted(
-            os.path.join(cfg_dir, f)
-            for f in os.listdir(cfg_dir)
-            if f.endswith(".yaml") and f != "base.yaml"
+            p for p in _glob.glob(os.path.join(cfg_dir, "**", "*.yaml"), recursive=True)
+            if os.path.basename(p) != "base.yaml"
         )
         print(f"No --config specified. Running all {len(configs)} experiments:\n"
               + "\n".join(f"  {c}" for c in configs))
