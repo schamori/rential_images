@@ -1,3 +1,12 @@
+"""
+Loss functions for MMAC classification.
+ 
+Includes:
+    - CrossEntropyLoss (standard and weighted)
+    - FocalLoss (with optional class weights)
+    - MultiTaskLoss (classification + age regression + centre prediction)
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
