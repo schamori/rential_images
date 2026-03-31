@@ -30,6 +30,20 @@ class FundusDataset(Dataset):
         img = Image.open(os.path.join(self.img_dir, row["image"])).convert("RGB")
         return self.transform(img), int(row["myopic_maculopathy_grade"])
 
+class FundusDatasetMTL(Dataset):
+    def __init__(self, df, img_dir, img_size=224, augment=False):
+        self.df = df.reset_index(drop=True)
+        self.img_dir = img_dir
+        self.transform = get_train_transform(img_size) if augment else get_val_transform(img_size)
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, i):
+        row = self.df.iloc[i]
+        img = Image.open(os.path.join(self.img_dir, row["image"])).convert("RGB")
+        return img_tensor, grade, age_norm, age_valid, centre
+
 
 def get_class_weights(df):
     """Inverse-frequency weights per class (for weighted loss / sampler)."""
@@ -49,8 +63,10 @@ def get_loaders(cfg):
     train_df = df.iloc[train_idx]
     val_df   = df.iloc[val_idx]
 
-    train_ds = FundusDataset(train_df, TRAIN_IMG, cfg["img_size"], augment=True)
-    val_ds   = FundusDataset(val_df,   TRAIN_IMG, cfg["img_size"], augment=False)
+    use_mtl = cfg.get("multitask", False)
+    DsClass = FundusDatasetMTL if use_mtl else FundusDataset
+    train_ds = DsClass(train_df, TRAIN_IMG, cfg["img_size"], augment=True)
+    val_ds   = DsClass(val_df,   TRAIN_IMG, cfg["img_size"], augment=False)
 
     # ── Sampler selection ─────────────────────────────────────────────────────
     sampler = None
@@ -73,7 +89,7 @@ def get_loaders(cfg):
             .apply(lambda g: g.sample(min_count, random_state=42))
             .index.get_level_values(1)
         )
-        train_ds = FundusDataset(train_df.loc[keep_idx], TRAIN_IMG, cfg["img_size"], augment=True)
+        train_ds = DsClass(train_df.loc[keep_idx], TRAIN_IMG, cfg["img_size"], augment=True)
 
     train_loader = DataLoader(
         train_ds,
