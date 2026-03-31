@@ -56,10 +56,14 @@ def get_loaders(cfg):
     sampler = None
     if cfg["sampler"] == "weighted":
         # WeightedRandomSampler: minority classes drawn more often (oversampling)
+        # oversample_strength: 1.0 = full inverse-freq, 0.5 = sqrt (softer), 2.0 = more aggressive
+        # oversample_epoch_mult: num_samples = mult * len(train_ds) (more passes over minority)
         train_labels = train_df["myopic_maculopathy_grade"].values
         class_counts = np.bincount(train_labels)
-        sample_weights = 1.0 / class_counts[train_labels]
-        sampler = WeightedRandomSampler(sample_weights, num_samples=len(train_ds), replacement=True)
+        strength = cfg.get("oversample_strength", 1.0)
+        sample_weights = (1.0 / class_counts[train_labels]) ** strength
+        n_samples = int(len(train_ds) * cfg.get("oversample_epoch_mult", 1.0))
+        sampler = WeightedRandomSampler(sample_weights, num_samples=n_samples, replacement=True)
 
     elif cfg["sampler"] == "undersample":
         # Random undersampling: keep at most min-class-count samples per class

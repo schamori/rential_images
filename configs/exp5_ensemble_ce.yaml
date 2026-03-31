@@ -1,0 +1,8 @@
+# Experiment 5 — Ensemble with plain CE loss (no class weights, no resampling)
+# Tests whether ensemble variance reduction alone helps without loss modifications
+loss: "ce"
+use_class_weights: false
+sampler: "default"
+ensemble: true
+ensemble_n: 3
+ensemble_seeds: [42, 7, 123]
