@@ -5,12 +5,15 @@ num_classes: 5
 epochs: 256
 batch_size: 128
 lr: 3.0e-4
+min_lr: 1.0e-6
+weight_decay: 0.1
 patience: 35
 
 # Loss: "ce" | "weighted_ce" | "focal"
 loss: "ce"
 use_class_weights: false
 focal_gamma: 2.0
+smoothing: 0.1
 
 # Sampler: "default" | "weighted" (oversample) | "undersample"
 sampler: "default"

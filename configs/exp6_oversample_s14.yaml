@@ -1,7 +1,0 @@
-# Oversampling strength=1.4 (base=1.0 is full inverse-freq, exp2)
-loss: "weighted_ce"
-use_class_weights: true
-sampler: "weighted"
-oversample_strength: 1.4
-oversample_epoch_mult: 1.0
-ensemble: false

@@ -5,5 +5,5 @@ loss: "weighted_ce"
 use_class_weights: true
 sampler: "default"
 ensemble: true
-ensemble_n: 3
-ensemble_seeds: [42, 7, 123]
+ensemble_n: 5
+ensemble_seeds: [42, 7, 123, 456, 789]

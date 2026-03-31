@@ -7,9 +7,11 @@ Usage:
 import argparse, copy, os
 import yaml
 import torch
+import torch.nn as nn
 import numpy as np
 from sklearn.metrics import classification_report, f1_score, cohen_kappa_score
 from transformers import ConvNextV2ForImageClassification
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from dataset import get_loaders, get_class_weights, LABELS_CSV
 from losses import get_loss
@@ -49,8 +51,7 @@ def evaluate(model, loader, device, criterion):
     f1_mac = f1_score(all_labels, all_preds, average="macro",    zero_division=0)
     f1_wt  = f1_score(all_labels, all_preds, average="weighted", zero_division=0)
     kappa  = cohen_kappa_score(all_labels, all_preds, weights="quadratic")
-    report = classification_report(all_labels, all_preds, target_names=CLASS_NAMES,
-                                   zero_division=0)
+    report = classification_report(all_labels, all_preds, target_names=CLASS_NAMES, zero_division=0)
     return {
         "loss": total_loss / len(loader),
         "acc": acc, "f1_macro": f1_mac, "f1_weighted": f1_wt, "kappa": kappa,
@@ -65,7 +66,10 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
         cfg["model_id"], num_labels=cfg["num_classes"], ignore_mismatched_sizes=True
     ).to(device)
 
-    optimiser = torch.optim.AdamW(model.parameters(), lr=cfg["lr"])
+    model.classifier.add_module("mc_dropout", nn.Dropout(p=0.2))
+
+    optimiser = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg.get("weight_decay", 0))
+    scheduler = CosineAnnealingLR(optimiser, T_max=cfg["epochs"], eta_min=cfg.get("min_lr", 1e-6))
     criterion = get_loss(cfg, class_weights, device)
     best_acc, patience_left = 0.0, cfg["patience"]
 
@@ -77,6 +81,7 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
             loss = criterion(model(imgs).logits, labels)
             optimiser.zero_grad(); loss.backward(); optimiser.step()
             train_loss += loss.item()
+        scheduler.step()
 
         m = evaluate(model, val_loader, device, criterion)
         print(f"  Epoch {epoch:3d}/{cfg['epochs']}  "
@@ -84,8 +89,8 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
               f"val_loss={m['loss']:.4f}  acc={m['acc']:.3f}  "
               f"f1_macro={m['f1_macro']:.3f}  kappa={m['kappa']:.3f}")
 
-        if m["acc"] > best_acc:
-            best_acc = m["acc"]
+        if m["loss"] > best_acc:
+            best_acc = m["loss"]
             patience_left = cfg["patience"]
             torch.save(model.state_dict(), save_path)
         else:
@@ -138,7 +143,6 @@ def run_experiment(config_path, device):
                 all_preds.extend(avg_logits.argmax(1).cpu().tolist())
                 all_labels.extend(labels.tolist())
 
-        from sklearn.metrics import classification_report, f1_score, cohen_kappa_score
         m = {
             "acc":         sum(p == l for p, l in zip(all_preds, all_labels)) / len(all_labels),
             "f1_macro":    f1_score(all_labels, all_preds, average="macro",    zero_division=0),
