@@ -41,8 +41,8 @@ def load_cfg(path):
     return cfg
 
 # ── Metrics ────────────────────────────────────────────────────────────────────
-def evaluate(model, loader, device, criterion):
-    """Evaluate model on a validation set, returning loss, acc, F1, kappa, and report."""
+def evaluate(model, loader, device, criterion): # single task
+    """Evaluate single task model on a validation set, returning loss, acc, F1, kappa, and report."""
     model.eval()
     all_preds, all_labels = [], []
     total_loss = 0
@@ -61,6 +61,49 @@ def evaluate(model, loader, device, criterion):
     report = classification_report(all_labels, all_preds, target_names=CLASS_NAMES, zero_division=0)
     return {
         "loss": total_loss / len(loader),
+        "acc": acc, "f1_macro": f1_mac, "f1_weighted": f1_wt, "kappa": kappa,
+        "report": report,
+    }
+
+def evaluate_mtl(model, loader, device, criterion): # multi task
+    """
+    Evaluate multi-task model on a validation set. Only classification metrics are reported.
+    """
+    model.eval()
+    all_preds, all_labels = [], []
+    total_loss_cls = 0
+    n_batches = 0
+ 
+    with torch.no_grad():
+        for batch in loader:
+            imgs, grades, ages, age_valid, centres = batch
+            imgs   = imgs.to(device)
+            grades = grades.to(device)
+            ages   = ages.float().to(device)
+            age_valid = age_valid.float().to(device)
+            centres   = centres.float().to(device)
+ 
+            cls_logits, age_pred, centre_pred = model(imgs)
+ 
+            # compute full MTL loss for logging
+            total, loss_dict = criterion(
+                cls_logits, age_pred, centre_pred,
+                grades, ages, age_valid, centres
+            )
+            total_loss_cls += loss_dict["cls"]
+            n_batches += 1
+ 
+            all_preds.extend(cls_logits.argmax(1).cpu().tolist())
+            all_labels.extend(grades.cpu().tolist())
+ 
+    acc    = sum(p == l for p, l in zip(all_preds, all_labels)) / len(all_labels)
+    f1_mac = f1_score(all_labels, all_preds, average="macro",    zero_division=0)
+    f1_wt  = f1_score(all_labels, all_preds, average="weighted", zero_division=0)
+    kappa  = cohen_kappa_score(all_labels, all_preds, weights="quadratic")
+    report = classification_report(all_labels, all_preds, target_names=CLASS_NAMES,
+                                   zero_division=0)
+    return {
+        "loss": total_loss_cls / max(n_batches, 1),
         "acc": acc, "f1_macro": f1_mac, "f1_weighted": f1_wt, "kappa": kappa,
         "report": report,
     }
