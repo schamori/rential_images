@@ -21,7 +21,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 import pandas as pd
 
 from dataset import get_loaders, get_class_weights, LABELS_CSV
-from losses import get_loss
+from losses import get_loss , get_multitask_loss
 from multitask_model import MultiTaskConvNeXt
 
 CLASS_NAMES = ["No pathology", "Tessellated", "Diffuse CRA", "Patchy CRA", "Macular atrophy"]
@@ -110,7 +110,7 @@ def evaluate_mtl(model, loader, device, criterion): # multi task
 
 # ── Single training run ────────────────────────────────────────────────────────
 def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_path):
-    """Train a single model, returning the best one after early stopping."""
+    """Train a single task model, returning the best one after early stopping."""
     torch.manual_seed(seed)
     model = ConvNextV2ForImageClassification.from_pretrained(
         cfg["model_id"], num_labels=cfg["num_classes"], ignore_mismatched_sizes=True
@@ -149,6 +149,72 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
                 print(f"  Early stopping at epoch {epoch} — best acc={best_acc:.3f}")
                 break
 
+    model.load_state_dict(torch.load(save_path, map_location=device))
+    return model
+
+# ── Single multi-task training run ────────────────────────────────────────────────────────
+def train_one_mtl(cfg, seed, device, train_loader, val_loader, class_weights, save_path):
+    """Train a multi-task model, returning the best one after early stopping."""
+    torch.manual_seed(seed)
+    model = MultiTaskConvNeXt(cfg).to(device)
+ 
+    optimiser = torch.optim.AdamW(model.parameters(), lr=cfg["lr"])
+    criterion = get_multitask_loss(cfg, class_weights, device)
+    best_f1, patience_left = 0.0, cfg["patience"]
+ 
+    for epoch in range(1, cfg["epochs"] + 1):
+        model.train()
+        train_losses = {"cls": 0, "age": 0, "centre": 0, "total": 0}
+        n_batches = 0
+ 
+        for batch in train_loader:
+            imgs, grades, ages, age_valid, centres = batch
+            imgs      = imgs.to(device)
+            grades    = grades.to(device)
+            ages      = ages.float().to(device)
+            age_valid = age_valid.float().to(device)
+            centres   = centres.float().to(device)
+ 
+            cls_logits, age_pred, centre_pred = model(imgs)
+ 
+            total, loss_dict = criterion(
+                cls_logits, age_pred, centre_pred,
+                grades, ages, age_valid, centres
+            )
+ 
+            optimiser.zero_grad()
+            total.backward()
+            optimiser.step()
+ 
+            for k in train_losses:
+                train_losses[k] += loss_dict[k]
+            n_batches += 1
+ 
+        # validation (classification metrics only)
+        m = evaluate_mtl(model, val_loader, device, criterion)
+ 
+        # logging
+        tl = {k: v / n_batches for k, v in train_losses.items()}
+        print(f"  Epoch {epoch:3d}/{cfg['epochs']}  "
+              f"loss_total={tl['total']:.4f}  "
+              f"loss_cls={tl['cls']:.4f}  "
+              f"loss_age={tl['age']:.4f}  "
+              f"loss_ctr={tl['centre']:.4f}  |  "
+              f"val_acc={m['acc']:.3f}  "
+              f"val_f1mac={m['f1_macro']:.3f}  "
+              f"val_kappa={m['kappa']:.3f}")
+ 
+        # early stopping on F1
+        if m["f1_macro"] > best_f1:
+            best_f1 = m["f1_macro"]
+            patience_left = cfg["patience"]
+            torch.save(model.state_dict(), save_path)
+        else:
+            patience_left -= 1
+            if patience_left == 0:
+                print(f"  Early stopping at epoch {epoch} — best f1_macro={best_f1:.3f}")
+                break
+ 
     model.load_state_dict(torch.load(save_path, map_location=device))
     return model
 
