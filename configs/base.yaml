@@ -6,19 +6,20 @@ epochs: 256
 batch_size: 128
 lr: 3.0e-4
 min_lr: 1.0e-6
-weight_decay: 0.1
+weight_decay: 0.05
 patience: 35
+t_max: 100
 
 # Loss: "ce" | "weighted_ce" | "focal"
 loss: "ce"
 use_class_weights: false
 focal_gamma: 2.0
-smoothing: 0.1
+smoothing: 0.0
 
 # Sampler: "default" | "weighted" (oversample) | "undersample"
 sampler: "default"
 
 # Ensemble: train N models with different seeds and average logits
 ensemble: false
-ensemble_n: 3
-ensemble_seeds: [42, 7, 123]
+ensemble_n: 5
+ensemble_seeds: [42, 7, 123, 456, 789]

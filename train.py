@@ -119,9 +119,9 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
     model.classifier.add_module("mc_dropout", nn.Dropout(p=0.2))
 
     optimiser = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg.get("weight_decay", 0))
-    scheduler = CosineAnnealingLR(optimiser, T_max=cfg["epochs"], eta_min=cfg.get("min_lr", 1e-6))
+    scheduler = CosineAnnealingLR(optimiser, T_max=cfg.get("t_max", 100), eta_min=cfg.get("min_lr", 1e-6))
     criterion = get_loss(cfg, class_weights, device)
-    best_acc, patience_left = 0.0, cfg["patience"]
+    best_f1, patience_left = 0.0, cfg["patience"]
 
     for epoch in range(1, cfg["epochs"] + 1):
         model.train()
@@ -131,6 +131,7 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
             loss = criterion(model(imgs).logits, labels)
             optimiser.zero_grad(); loss.backward(); optimiser.step()
             train_loss += loss.item()
+        
         scheduler.step()
 
         m = evaluate(model, val_loader, device, criterion)
@@ -139,14 +140,14 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
               f"val_loss={m['loss']:.4f}  acc={m['acc']:.3f}  "
               f"f1_macro={m['f1_macro']:.3f}  kappa={m['kappa']:.3f}")
 
-        if m["loss"] > best_acc:
-            best_acc = m["loss"]
+        if m["f1_macro"] > best_f1:
+            best_f1 = m["f1_macro"]
             patience_left = cfg["patience"]
             torch.save(model.state_dict(), save_path)
         else:
             patience_left -= 1
             if patience_left == 0:
-                print(f"  Early stopping at epoch {epoch} — best acc={best_acc:.3f}")
+                print(f"  Early stopping at epoch {epoch} — best f1_macro={best_f1:.3f}")
                 break
 
     model.load_state_dict(torch.load(save_path, map_location=device))
