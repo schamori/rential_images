@@ -94,3 +94,12 @@ def get_loss(cfg, class_weights, device):
     else:
         # "ce" or "weighted_ce"
         return nn.CrossEntropyLoss(weight=w, label_smoothing=smoothing)
+
+
+def get_multitask_loss(cfg, class_weights, device):
+    cls_criterion = get_loss(cfg, class_weights, device)
+    return MultiTaskLoss(
+        cls_criterion=cls_criterion,
+        lambda_age=cfg.get("lambda_age", 0.5),
+        lambda_centre=cfg.get("lambda_centre", 0.3),
+    )
