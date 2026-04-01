@@ -230,14 +230,28 @@ def run_experiment(config_path, device):
     train_loader, val_loader, df = get_loaders(cfg)
     class_weights = get_class_weights(df)
 
-    if not cfg["ensemble"]:
+    is_mtl = cfg.get("multitask", False)
+
+    if is_mtl:
+        # ── multi-task path ──────────────────────────────────────────
+        model = train_one_mtl(
+            cfg, seed=42, device=device,
+            train_loader=train_loader, val_loader=val_loader,
+            class_weights=class_weights,
+            save_path=os.path.join(WEIGHT_DIR, f"{exp_name}.pt"),
+        )
+        criterion = get_multitask_loss(cfg, class_weights, device)
+        m = evaluate_mtl(model, val_loader, device, criterion)
+
+    elif not cfg["ensemble"]:
+        # ── single-task path ──────────────────────────────────────────
         model = train_one(cfg, seed=42, device=device,
                           train_loader=train_loader, val_loader=val_loader,
                           class_weights=class_weights,
                           save_path=os.path.join(WEIGHT_DIR, f"{exp_name}.pt"))
         m = evaluate(model, val_loader, device, get_loss(cfg, class_weights, device))
     else:
-        # Train N models, average logits
+        # train N models, average logits
         models = []
         for i, seed in enumerate(cfg["ensemble_seeds"][:cfg["ensemble_n"]]):
             print(f"\n--- Ensemble member {i+1}/{cfg['ensemble_n']} (seed={seed}) ---")
