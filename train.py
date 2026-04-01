@@ -1,8 +1,14 @@
 """
+Training Script for MMAC classification -- supports both single-task and multi-task modes:
+
 Usage:
-    python train.py --config configs/base.yaml
+    python train.py --config configs/base.yaml                 # single-task
     python train.py --config configs/exp1_weighted_loss.yaml
     python train.py --config configs/exp3_ensemble.yaml
+    python train.py --config configs/exp5_mtl_age.yaml         # multi-task
+    python train.py                                            # run all configs
+ 
+Multi-task mode is activated when the config contains  multitask: true.
 """
 import argparse, copy, os
 import yaml
@@ -12,10 +18,11 @@ import numpy as np
 from sklearn.metrics import classification_report, f1_score, cohen_kappa_score
 from transformers import ConvNextV2ForImageClassification
 from torch.optim.lr_scheduler import CosineAnnealingLR
+import pandas as pd
 
 from dataset import get_loaders, get_class_weights, LABELS_CSV
 from losses import get_loss
-import pandas as pd
+from multitask_model import MultiTaskConvNeXt
 
 CLASS_NAMES = ["No pathology", "Tessellated", "Diffuse CRA", "Patchy CRA", "Macular atrophy"]
 
