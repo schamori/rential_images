@@ -89,8 +89,8 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
               f"val_loss={m['loss']:.4f}  acc={m['acc']:.3f}  "
               f"f1_macro={m['f1_macro']:.3f}  kappa={m['kappa']:.3f}")
 
-        if m["loss"] > best_acc:
-            best_acc = m["loss"]
+        if m["f1_macro"] > best_acc:
+            best_acc = m["f1_macro"]
             patience_left = cfg["patience"]
             torch.save(model.state_dict(), save_path)
         else:
