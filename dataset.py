@@ -42,6 +42,19 @@ class FundusDatasetMTL(Dataset):
     def __getitem__(self, i):
         row = self.df.iloc[i]
         img = Image.open(os.path.join(self.img_dir, row["image"])).convert("RGB")
+        img_tensor = self.transform(img)
+        grade = int(row["myopic_maculopathy_grade"])
+
+        # age: normalise to [0, 1], handle missing values
+        if pd.isna(row["age"]):
+            age_norm = 0.0
+            age_valid = 0.0
+        else:
+            age_norm = float(row["age"]) / 100.0
+            age_valid = 1.0
+
+        # data centre: map to 0/1 (centre 1 → 0, centre 2 → 1)
+        centre = float(row["data_center"]) - 1.0
         return img_tensor, grade, age_norm, age_valid, centre
 
 
