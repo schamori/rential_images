@@ -1,0 +1,11 @@
+# Experiment 6 — Softer oversampling with larger effective epoch size
+# oversample_strength 0.5: square-root of inverse freq — less extreme than full reweighting,
+#   avoids the model overfitting to the few minority samples
+# oversample_epoch_mult 1.5: each epoch sees 1.5x more samples, giving minority classes
+#   more absolute exposure without fully equalising the distribution
+loss: "weighted_ce"
+use_class_weights: true
+sampler: "weighted"
+oversample_strength: 0.5
+oversample_epoch_mult: 1.5
+ensemble: false

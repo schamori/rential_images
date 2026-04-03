@@ -3,6 +3,5 @@
 !*.yaml
 !.gitignore
 !configs/
-configs/*
-!configs/*.yaml
-data.yaml
+!configs/**
+!configs/**/*.yaml

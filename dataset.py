@@ -9,7 +9,8 @@ from sklearn.model_selection import train_test_split
 
 from augmentations import get_train_transform, get_val_transform
 
-with open("./data.yaml") as f:
+HERE = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(HERE, "data.yaml")) as f:
     data_path = yaml.safe_load(f)
 
 DATA = data_path["data_root"]
