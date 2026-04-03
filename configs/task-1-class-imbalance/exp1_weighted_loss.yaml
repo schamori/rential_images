@@ -1,0 +1,6 @@
+# Experiment 1a — Weighted Cross Entropy
+# Higher loss penalty for minority classes (C3, C4)
+loss: "weighted_ce"
+use_class_weights: true
+sampler: "default"
+ensemble: false
