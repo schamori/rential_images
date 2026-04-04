@@ -2,7 +2,7 @@
 # MTL — age regression only
 
 multitask: true
-lambda_age: 0.5
+lambda_age: 0.2
 lambda_centre: 0.0
 
 loss: "ce"
