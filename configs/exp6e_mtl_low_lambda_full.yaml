@@ -1,0 +1,8 @@
+#MTL full with much lower lambdas
+multitask: true
+lambda_age: 0.1
+lambda_centre: 0.1
+loss: "ce"
+use_class_weights: false
+sampler: "weighted"
+ensemble: false
