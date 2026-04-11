@@ -4,3 +4,4 @@
 !configs/
 !configs/**
 !configs/**/*.yaml
+.DS_Store
