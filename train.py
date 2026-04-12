@@ -164,6 +164,12 @@ def train_one_mtl(cfg, seed, device, train_loader, val_loader, class_weights, sa
     best_f1, patience_left = 0.0, cfg["patience"]
  
     for epoch in range(1, cfg["epochs"] + 1):
+        # DANN: ramp up gradient reversal strength (Ganin et al. schedule)
+        if cfg.get("dann", False):
+            p = epoch / cfg["epochs"]
+            grl_lam = 2.0 / (1.0 + np.exp(-10.0 * p)) - 1.0
+            model.set_grl_lambda(grl_lam)    
+
         model.train()
         train_losses = {"cls": 0, "age": 0, "centre": 0, "total": 0}
         n_batches = 0
@@ -196,6 +202,7 @@ def train_one_mtl(cfg, seed, device, train_loader, val_loader, class_weights, sa
  
         # logging
         tl = {k: v / n_batches for k, v in train_losses.items()}
+        grl_str = f"  grl_λ={grl_lam:.3f}" if cfg.get("dann", False) else ""
         print(f"  Epoch {epoch:3d}/{cfg['epochs']}  "
               f"loss_total={tl['total']:.4f}  "
               f"loss_cls={tl['cls']:.4f}  "
@@ -203,7 +210,7 @@ def train_one_mtl(cfg, seed, device, train_loader, val_loader, class_weights, sa
               f"loss_ctr={tl['centre']:.4f}  |  "
               f"val_acc={m['acc']:.3f}  "
               f"val_f1mac={m['f1_macro']:.3f}  "
-              f"val_kappa={m['kappa']:.3f}")
+              f"val_kappa={m['kappa']:.3f}{grl_str}")
  
         # early stopping on F1
         if m["f1_macro"] > best_f1:
