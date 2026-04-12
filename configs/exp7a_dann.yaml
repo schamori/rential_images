@@ -1,0 +1,14 @@
+# Experiment 7a: Domain-Adversarial Neural Network (DANN)
+# Gradient reversal on centre head — forces centre-invariant features
+# No age auxiliary task (isolate the DANN effect)
+
+multitask: true
+dann: true
+
+lambda_age: 0.0
+lambda_centre: 0.3
+
+loss: "ce"
+use_class_weights: false
+sampler: "weighted"
+ensemble: false
