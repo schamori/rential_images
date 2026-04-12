@@ -20,6 +20,7 @@ Usage:
 import torch
 import torch.nn as nn
 from transformers import ConvNextV2ForImageClassification
+from torch.autograd import Function
 
 # gradient reversal layer ────────────────────────────────────────────────────
 class GradientReversalFn(Function):
