@@ -20,7 +20,7 @@ import pandas as pd
 CLASS_NAMES = ["No pathology", "Tessellated", "Diffuse CRA", "Patchy CRA", "Macular atrophy"]
 
 HERE       = os.path.dirname(os.path.abspath(__file__))
-WEIGHT_DIR = os.path.join(HERE, "weights")
+WEIGHT_DIR = os.path.join(HERE, "weights_0.3")
 os.makedirs(WEIGHT_DIR, exist_ok=True)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -58,15 +58,28 @@ def evaluate(model, loader, device, criterion):
         "report": report,
     }
 
+def build_model(cfg, num_classes, device):
+    model = ConvNextV2ForImageClassification.from_pretrained(
+        cfg["model_id"],
+        num_labels=num_classes,
+        ignore_mismatched_sizes=True,
+    ).to(device)
+
+    hidden_dim = model.classifier.in_features  # no [1] indexing
+
+    model.classifier = nn.Sequential(
+        nn.Dropout(p=0.3),
+        nn.Linear(hidden_dim, num_classes),
+    ).to(device)
+    
+    return model
+
 # ── Single training run ────────────────────────────────────────────────────────
 def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_path):
     """Train a single model, returning the best one after early stopping."""
     torch.manual_seed(seed)
-    model = ConvNextV2ForImageClassification.from_pretrained(
-        cfg["model_id"], num_labels=cfg["num_classes"], ignore_mismatched_sizes=True
-    ).to(device)
-
-    model.classifier.add_module("mc_dropout", nn.Dropout(p=0.2))
+    
+    model = build_model(cfg, num_classes=len(CLASS_NAMES), device=device)
 
     optimiser = torch.optim.AdamW(model.parameters(), lr=cfg["lr"], weight_decay=cfg.get("weight_decay", 0))
     scheduler = CosineAnnealingLR(optimiser, T_max=cfg.get("t_max", 100), eta_min=cfg.get("min_lr", 1e-6))

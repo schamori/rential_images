@@ -14,7 +14,7 @@ t_max: 100
 loss: "ce"
 use_class_weights: false
 focal_gamma: 2.0
-smoothing: 0.0
+smoothing: 0.05
 
 # Sampler: "default" | "weighted" (oversample) | "undersample"
 sampler: "default"

@@ -6,5 +6,11 @@ use_class_weights: true
 focal_gamma: 2.0
 sampler: "weighted"
 ensemble: true
+
+# For ensemble size 5 use:
 ensemble_n: 5
-ensemble_seeds: [42, 7, 123, 456, 789]
+ensemble_seeds: [42, 7, 123, 363, 789]
+
+# For ensemble size 10 use:
+# ensemble_n: 10
+# ensemble_seeds: [42, 7, 32, 84, 104, 123, 363, 456, 627, 789]
