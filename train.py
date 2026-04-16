@@ -80,7 +80,6 @@ def build_model(cfg, num_classes, device):
     ).to(device)
     
     return model
-
 def evaluate_mtl(model, loader, device, criterion): # multi task
     """
     Evaluate multi-task model on a validation set. Only classification metrics are reported.
