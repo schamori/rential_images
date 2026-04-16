@@ -139,7 +139,8 @@ if __name__ == "__main__":
     import os
     import matplotlib.pyplot as plt
     
-    with open("./data.yaml") as f:
+    HERE_AUG = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(HERE_AUG, "data.yaml")) as f:
         data_path = yaml.safe_load(f)
 
     DATA = data_path["data_root"]

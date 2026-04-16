@@ -1,0 +1,6 @@
+# Experiment 2 — Weighted Random Sampler (oversampling)
+# Minority classes drawn proportionally more during training
+loss: "ce"
+use_class_weights: false
+sampler: "weighted"
+ensemble: false

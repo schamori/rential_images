@@ -1,8 +1,14 @@
 """
+Training Script for MMAC classification -- supports both single-task and multi-task modes:
+
 Usage:
-    python train.py --config configs/base.yaml
+    python train.py --config configs/base.yaml                 # single-task
     python train.py --config configs/exp1_weighted_loss.yaml
     python train.py --config configs/exp3_ensemble.yaml
+    python train.py --config configs/exp5_mtl_age.yaml         # multi-task
+    python train.py                                            # run all configs
+ 
+Multi-task mode is activated when the config contains  multitask: true.
 """
 import argparse, copy, os
 import yaml
@@ -12,10 +18,11 @@ import numpy as np
 from sklearn.metrics import classification_report, f1_score, cohen_kappa_score
 from transformers import ConvNextV2ForImageClassification
 from torch.optim.lr_scheduler import CosineAnnealingLR
+import pandas as pd
 
 from dataset import get_loaders, get_class_weights, LABELS_CSV
-from losses import get_loss
-import pandas as pd
+from losses import get_loss , get_multitask_loss
+from multitask_model import MultiTaskConvNeXt
 
 CLASS_NAMES = ["No pathology", "Tessellated", "Diffuse CRA", "Patchy CRA", "Macular atrophy"]
 
@@ -34,8 +41,8 @@ def load_cfg(path):
     return cfg
 
 # ── Metrics ────────────────────────────────────────────────────────────────────
-def evaluate(model, loader, device, criterion):
-    """Evaluate model on a validation set, returning loss, acc, F1, kappa, and report."""
+def evaluate(model, loader, device, criterion): # single task
+    """Evaluate single task model on a validation set, returning loss, acc, F1, kappa, and report."""
     model.eval()
     all_preds, all_labels = [], []
     total_loss = 0
@@ -74,9 +81,52 @@ def build_model(cfg, num_classes, device):
     
     return model
 
+def evaluate_mtl(model, loader, device, criterion): # multi task
+    """
+    Evaluate multi-task model on a validation set. Only classification metrics are reported.
+    """
+    model.eval()
+    all_preds, all_labels = [], []
+    total_loss_cls = 0
+    n_batches = 0
+ 
+    with torch.no_grad():
+        for batch in loader:
+            imgs, grades, ages, age_valid, centres = batch
+            imgs   = imgs.to(device)
+            grades = grades.to(device)
+            ages   = ages.float().to(device)
+            age_valid = age_valid.float().to(device)
+            centres   = centres.float().to(device)
+ 
+            cls_logits, age_pred, centre_pred = model(imgs)
+ 
+            # compute full MTL loss for logging
+            total, loss_dict = criterion(
+                cls_logits, age_pred, centre_pred,
+                grades, ages, age_valid, centres
+            )
+            total_loss_cls += loss_dict["cls"]
+            n_batches += 1
+ 
+            all_preds.extend(cls_logits.argmax(1).cpu().tolist())
+            all_labels.extend(grades.cpu().tolist())
+ 
+    acc    = sum(p == l for p, l in zip(all_preds, all_labels)) / len(all_labels)
+    f1_mac = f1_score(all_labels, all_preds, average="macro",    zero_division=0)
+    f1_wt  = f1_score(all_labels, all_preds, average="weighted", zero_division=0)
+    kappa  = cohen_kappa_score(all_labels, all_preds, weights="quadratic")
+    report = classification_report(all_labels, all_preds, target_names=CLASS_NAMES,
+                                   zero_division=0)
+    return {
+        "loss": total_loss_cls / max(n_batches, 1),
+        "acc": acc, "f1_macro": f1_mac, "f1_weighted": f1_wt, "kappa": kappa,
+        "report": report,
+    }
+
 # ── Single training run ────────────────────────────────────────────────────────
 def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_path):
-    """Train a single model, returning the best one after early stopping."""
+    """Train a single task model, returning the best one after early stopping."""
     torch.manual_seed(seed)
     
     model = build_model(cfg, num_classes=len(CLASS_NAMES), device=device)
@@ -116,6 +166,72 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
     model.load_state_dict(torch.load(save_path, map_location=device))
     return model
 
+# ── Single multi-task training run ────────────────────────────────────────────────────────
+def train_one_mtl(cfg, seed, device, train_loader, val_loader, class_weights, save_path):
+    """Train a multi-task model, returning the best one after early stopping."""
+    torch.manual_seed(seed)
+    model = MultiTaskConvNeXt(cfg).to(device)
+ 
+    optimiser = torch.optim.AdamW(model.parameters(), lr=cfg["lr"])
+    criterion = get_multitask_loss(cfg, class_weights, device)
+    best_f1, patience_left = 0.0, cfg["patience"]
+ 
+    for epoch in range(1, cfg["epochs"] + 1):
+        model.train()
+        train_losses = {"cls": 0, "age": 0, "centre": 0, "total": 0}
+        n_batches = 0
+ 
+        for batch in train_loader:
+            imgs, grades, ages, age_valid, centres = batch
+            imgs      = imgs.to(device)
+            grades    = grades.to(device)
+            ages      = ages.float().to(device)
+            age_valid = age_valid.float().to(device)
+            centres   = centres.float().to(device)
+ 
+            cls_logits, age_pred, centre_pred = model(imgs)
+ 
+            total, loss_dict = criterion(
+                cls_logits, age_pred, centre_pred,
+                grades, ages, age_valid, centres
+            )
+ 
+            optimiser.zero_grad()
+            total.backward()
+            optimiser.step()
+ 
+            for k in train_losses:
+                train_losses[k] += loss_dict[k]
+            n_batches += 1
+ 
+        # validation (classification metrics only)
+        m = evaluate_mtl(model, val_loader, device, criterion)
+ 
+        # logging
+        tl = {k: v / n_batches for k, v in train_losses.items()}
+        print(f"  Epoch {epoch:3d}/{cfg['epochs']}  "
+              f"loss_total={tl['total']:.4f}  "
+              f"loss_cls={tl['cls']:.4f}  "
+              f"loss_age={tl['age']:.4f}  "
+              f"loss_ctr={tl['centre']:.4f}  |  "
+              f"val_acc={m['acc']:.3f}  "
+              f"val_f1mac={m['f1_macro']:.3f}  "
+              f"val_kappa={m['kappa']:.3f}")
+ 
+        # early stopping on F1
+        if m["f1_macro"] > best_f1:
+            best_f1 = m["f1_macro"]
+            patience_left = cfg["patience"]
+            torch.save(model.state_dict(), save_path)
+        else:
+            patience_left -= 1
+            if patience_left == 0:
+                print(f"  Early stopping at epoch {epoch} — best f1_macro={best_f1:.3f}")
+                break
+ 
+    model.load_state_dict(torch.load(save_path, map_location=device))
+    return model
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 def run_experiment(config_path, device):
     """Run a single experiment specified by a config yaml, returning results."""
@@ -128,14 +244,28 @@ def run_experiment(config_path, device):
     train_loader, val_loader, df = get_loaders(cfg)
     class_weights = get_class_weights(df)
 
-    if not cfg["ensemble"]:
+    is_mtl = cfg.get("multitask", False)
+
+    if is_mtl:
+        # ── multi-task path ──────────────────────────────────────────
+        model = train_one_mtl(
+            cfg, seed=42, device=device,
+            train_loader=train_loader, val_loader=val_loader,
+            class_weights=class_weights,
+            save_path=os.path.join(WEIGHT_DIR, f"{exp_name}.pt"),
+        )
+        criterion = get_multitask_loss(cfg, class_weights, device)
+        m = evaluate_mtl(model, val_loader, device, criterion)
+
+    elif not cfg["ensemble"]:
+        # ── single-task path ──────────────────────────────────────────
         model = train_one(cfg, seed=42, device=device,
                           train_loader=train_loader, val_loader=val_loader,
                           class_weights=class_weights,
                           save_path=os.path.join(WEIGHT_DIR, f"{exp_name}.pt"))
         m = evaluate(model, val_loader, device, get_loss(cfg, class_weights, device))
     else:
-        # Train N models, average logits
+        # train N models, average logits
         models = []
         for i, seed in enumerate(cfg["ensemble_seeds"][:cfg["ensemble_n"]]):
             print(f"\n--- Ensemble member {i+1}/{cfg['ensemble_n']} (seed={seed}) ---")
