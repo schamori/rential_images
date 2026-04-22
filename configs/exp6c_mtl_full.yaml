@@ -1,9 +1,0 @@
-# MTL — both auxiliary tasks
-multitask: true
-lambda_age: 0.5
-lambda_centre: 0.3
-
-loss: "ce"
-use_class_weights: false
-sampler: "weighted"
-ensemble: false

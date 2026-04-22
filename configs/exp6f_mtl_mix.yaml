@@ -1,9 +1,0 @@
-# Mixture: MTL + weighted loss (combines multi-task + imbalance)
-multitask: true
-lambda_age: 0.5
-lambda_centre: 0.3
-
-loss: "ce"
-use_class_weights: true     # adds class weighting on top of MTL
-sampler: "weighted"
-ensemble: false

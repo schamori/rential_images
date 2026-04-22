@@ -1,7 +1,0 @@
-# Experiment 1b — Focal Loss
-# Like WCE but also down-weights easy majority examples dynamically
-loss: "focal"
-use_class_weights: true
-focal_gamma: 2.0
-sampler: "default"
-ensemble: false

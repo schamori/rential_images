@@ -23,11 +23,12 @@ import pandas as pd
 from dataset import get_loaders, get_class_weights, LABELS_CSV
 from losses import get_loss , get_multitask_loss
 from multitask_model import MultiTaskConvNeXt
+from evaluate import evaluate, evaluate_mtl, evaluate_ensemble, evaluate_mtl_ensemble
 
 CLASS_NAMES = ["No pathology", "Tessellated", "Diffuse CRA", "Patchy CRA", "Macular atrophy"]
 
 HERE       = os.path.dirname(os.path.abspath(__file__))
-WEIGHT_DIR = os.path.join(HERE, "weights_0.3")
+WEIGHT_DIR = os.path.join(HERE, "weights")
 os.makedirs(WEIGHT_DIR, exist_ok=True)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -40,31 +41,7 @@ def load_cfg(path):
         cfg.update(yaml.safe_load(f))   # experiment overrides base
     return cfg
 
-# ── Metrics ────────────────────────────────────────────────────────────────────
-def evaluate(model, loader, device, criterion): # single task
-    """Evaluate single task model on a validation set, returning loss, acc, F1, kappa, and report."""
-    model.eval()
-    all_preds, all_labels = [], []
-    total_loss = 0
-    with torch.no_grad():
-        for imgs, labels in loader:
-            imgs, labels = imgs.to(device), labels.to(device)
-            logits = model(imgs).logits
-            total_loss += criterion(logits, labels).item()
-            all_preds.extend(logits.argmax(1).cpu().tolist())
-            all_labels.extend(labels.cpu().tolist())
-
-    acc    = sum(p == l for p, l in zip(all_preds, all_labels)) / len(all_labels)
-    f1_mac = f1_score(all_labels, all_preds, average="macro",    zero_division=0)
-    f1_wt  = f1_score(all_labels, all_preds, average="weighted", zero_division=0)
-    kappa  = cohen_kappa_score(all_labels, all_preds, weights="quadratic")
-    report = classification_report(all_labels, all_preds, target_names=CLASS_NAMES, zero_division=0)
-    return {
-        "loss": total_loss / len(loader),
-        "acc": acc, "f1_macro": f1_mac, "f1_weighted": f1_wt, "kappa": kappa,
-        "report": report,
-    }
-
+# ── Model building ─────────────────────────────────────────────────────────────
 def build_model(cfg, num_classes, device):
     model = ConvNextV2ForImageClassification.from_pretrained(
         cfg["model_id"],
@@ -79,49 +56,7 @@ def build_model(cfg, num_classes, device):
         nn.Linear(hidden_dim, num_classes),
     ).to(device)
     
-    return model
-def evaluate_mtl(model, loader, device, criterion): # multi task
-    """
-    Evaluate multi-task model on a validation set. Only classification metrics are reported.
-    """
-    model.eval()
-    all_preds, all_labels = [], []
-    total_loss_cls = 0
-    n_batches = 0
- 
-    with torch.no_grad():
-        for batch in loader:
-            imgs, grades, ages, age_valid, centres = batch
-            imgs   = imgs.to(device)
-            grades = grades.to(device)
-            ages   = ages.float().to(device)
-            age_valid = age_valid.float().to(device)
-            centres   = centres.float().to(device)
- 
-            cls_logits, age_pred, centre_pred = model(imgs)
- 
-            # compute full MTL loss for logging
-            total, loss_dict = criterion(
-                cls_logits, age_pred, centre_pred,
-                grades, ages, age_valid, centres
-            )
-            total_loss_cls += loss_dict["cls"]
-            n_batches += 1
- 
-            all_preds.extend(cls_logits.argmax(1).cpu().tolist())
-            all_labels.extend(grades.cpu().tolist())
- 
-    acc    = sum(p == l for p, l in zip(all_preds, all_labels)) / len(all_labels)
-    f1_mac = f1_score(all_labels, all_preds, average="macro",    zero_division=0)
-    f1_wt  = f1_score(all_labels, all_preds, average="weighted", zero_division=0)
-    kappa  = cohen_kappa_score(all_labels, all_preds, weights="quadratic")
-    report = classification_report(all_labels, all_preds, target_names=CLASS_NAMES,
-                                   zero_division=0)
-    return {
-        "loss": total_loss_cls / max(n_batches, 1),
-        "acc": acc, "f1_macro": f1_mac, "f1_weighted": f1_wt, "kappa": kappa,
-        "report": report,
-    }
+    return model                                 
 
 # ── Single training run ────────────────────────────────────────────────────────
 def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_path):
@@ -146,7 +81,7 @@ def train_one(cfg, seed, device, train_loader, val_loader, class_weights, save_p
         
         scheduler.step()
 
-        m = evaluate(model, val_loader, device, criterion)
+        m = evaluate(model, val_loader, device, criterion, CLASS_NAMES)
         print(f"  Epoch {epoch:3d}/{cfg['epochs']}  "
               f"train_loss={train_loss/len(train_loader):.4f}  "
               f"val_loss={m['loss']:.4f}  acc={m['acc']:.3f}  "
@@ -210,7 +145,7 @@ def train_one_mtl(cfg, seed, device, train_loader, val_loader, class_weights, sa
             n_batches += 1
  
         # validation (classification metrics only)
-        m = evaluate_mtl(model, val_loader, device, criterion)
+        m = evaluate_mtl(model, val_loader, device, criterion, CLASS_NAMES)
  
         # logging
         tl = {k: v / n_batches for k, v in train_losses.items()}
@@ -240,9 +175,9 @@ def train_one_mtl(cfg, seed, device, train_loader, val_loader, class_weights, sa
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 def run_experiment(config_path, device):
-    """Run a single experiment specified by a config yaml, returning results."""
     cfg = load_cfg(config_path)
     exp_name = os.path.splitext(os.path.basename(config_path))[0]
+
     print(f"\n{'='*60}")
     print(f"=== {exp_name} | device={device} ===")
     print(yaml.dump(cfg, default_flow_style=False))
@@ -252,55 +187,55 @@ def run_experiment(config_path, device):
 
     is_mtl = cfg.get("multitask", False)
 
-    if is_mtl:
-        # ── multi-task path ──────────────────────────────────────────
-        model = train_one_mtl(
-            cfg, seed=42, device=device,
-            train_loader=train_loader, val_loader=val_loader,
-            class_weights=class_weights,
-            save_path=os.path.join(WEIGHT_DIR, f"{exp_name}.pt"),
+    is_ensemble = cfg.get("ensemble", False)
+    n_models = cfg.get("ensemble_n", 1) if is_ensemble else 1
+    seeds = cfg.get("ensemble_seeds", [42] * n_models)[:n_models]
+
+    models = []
+
+    for i, seed in enumerate(seeds):
+        if is_ensemble:
+            print(f"\n--- Model {i+1}/{n_models} (seed={seed}) ---")
+
+        save_path = (
+            os.path.join(WEIGHT_DIR, f"{exp_name}_seed{seed}.pt")
+            if is_ensemble
+            else os.path.join(WEIGHT_DIR, f"{exp_name}.pt")
         )
-        criterion = get_multitask_loss(cfg, class_weights, device)
-        m = evaluate_mtl(model, val_loader, device, criterion)
 
-    elif not cfg["ensemble"]:
-        # ── single-task path ──────────────────────────────────────────
-        model = train_one(cfg, seed=42, device=device,
-                          train_loader=train_loader, val_loader=val_loader,
-                          class_weights=class_weights,
-                          save_path=os.path.join(WEIGHT_DIR, f"{exp_name}.pt"))
-        m = evaluate(model, val_loader, device, get_loss(cfg, class_weights, device))
+        if is_mtl:
+            model = train_one_mtl(
+                cfg, seed=seed, device=device,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                class_weights=class_weights,
+                save_path=save_path,
+            )
+        else:
+            model = train_one(
+                cfg, seed=seed, device=device,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                class_weights=class_weights,
+                save_path=save_path,
+            )
+
+        models.append(model)
+
+    criterion = get_multitask_loss(cfg, class_weights, device) if is_mtl else get_loss(cfg, class_weights, device)
+
+    if len(models) == 1:
+        model = models[0]
+        if is_mtl:
+            m = evaluate_mtl(model, val_loader, device, criterion, CLASS_NAMES)
+        else:
+            m = evaluate(model, val_loader, device, criterion, CLASS_NAMES)
+
     else:
-        # train N models, average logits
-        models = []
-        for i, seed in enumerate(cfg["ensemble_seeds"][:cfg["ensemble_n"]]):
-            print(f"\n--- Ensemble member {i+1}/{cfg['ensemble_n']} (seed={seed}) ---")
-            m_path = os.path.join(WEIGHT_DIR, f"{exp_name}_seed{seed}.pt")
-            m = train_one(cfg, seed=seed, device=device,
-                          train_loader=train_loader, val_loader=val_loader,
-                          class_weights=class_weights, save_path=m_path)
-            models.append(m)
-
-        # Ensemble evaluation
-        for mod in models:
-            mod.eval()
-        all_preds, all_labels = [], []
-        criterion = get_loss(cfg, class_weights, device)
-        with torch.no_grad():
-            for imgs, labels in val_loader:
-                imgs = imgs.to(device)
-                avg_logits = sum(mod(imgs).logits for mod in models) / len(models)
-                all_preds.extend(avg_logits.argmax(1).cpu().tolist())
-                all_labels.extend(labels.tolist())
-
-        m = {
-            "acc":         sum(p == l for p, l in zip(all_preds, all_labels)) / len(all_labels),
-            "f1_macro":    f1_score(all_labels, all_preds, average="macro",    zero_division=0),
-            "f1_weighted": f1_score(all_labels, all_preds, average="weighted", zero_division=0),
-            "kappa":       cohen_kappa_score(all_labels, all_preds, weights="quadratic"),
-            "report":      classification_report(all_labels, all_preds,
-                                                 target_names=CLASS_NAMES, zero_division=0),
-        }
+        if is_mtl:
+            m = evaluate_mtl_ensemble(models, val_loader, device, criterion, CLASS_NAMES)
+        else:
+            m = evaluate_ensemble(models, val_loader, device, criterion, CLASS_NAMES)  # optional cleanup
 
     print(f"\n{'='*60}")
     print(f"Final results — {exp_name}")
@@ -309,6 +244,7 @@ def run_experiment(config_path, device):
     print(f"  F1 weighted: {m['f1_weighted']:.4f}")
     print(f"  QW Kappa:    {m['kappa']:.4f}")
     print(f"\nPer-class report:\n{m['report']}")
+
     return exp_name, m
 
 

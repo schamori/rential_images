@@ -1,8 +1,0 @@
-# MTL centre only + weighted CE
-multitask: true
-lambda_age: 0.0
-lambda_centre: 0.3
-loss: "ce"
-use_class_weights: true
-sampler: "weighted"
-ensemble: false
