@@ -1,0 +1,5 @@
+# Experiment 0 — Baseline: plain CE, no class weights, no resampling, no ensemble
+loss: "ce"
+use_class_weights: false
+sampler: "default"
+ensemble: false

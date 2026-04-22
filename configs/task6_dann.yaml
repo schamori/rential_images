@@ -1,0 +1,11 @@
+# Task 6 — DANN + full multitask
+# Gradient reversal on centre + age MTL auxiliary
+# Tests whether combining bias mitigation with auxiliary learning helps
+multitask: true
+dann: true
+lambda_age: 0.3
+lambda_centre: 0.3
+loss: "ce"
+use_class_weights: false
+sampler: "weighted"
+ensemble: false

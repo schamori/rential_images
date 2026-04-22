@@ -1,0 +1,12 @@
+# Task 7 — Mixed Approach
+# Combines weighted loss, ensemble training, and multitask learning with DANN
+multitask: true
+dann: true
+lambda_age: 0.3
+lambda_centre: 0.3
+loss: "weighted_ce"
+use_class_weights: true
+sampler: "weighted"
+ensemble: true
+ensemble_n: 5
+ensemble_seeds: [42, 7, 123, 363, 789]
