@@ -18,15 +18,17 @@ Models are compared using macro F1 as the primary metric (given class imbalance)
 
 ## Repository Layout
 
+```
 .
-├── configs/ # Experiment configs, inheriting from base.yaml
-├── weights/ # Saved model checkpoints (created at training time)
-├── train.py # Main training / evaluation entry point
-├── dataset.py # FundusDataset and FundusDatasetMTL
-├── multitask_model.py # Shared-encoder multi-head MTL model
-├── losses.py # Loss functions incl. MultiTaskLoss / get_multitask_loss
+├── configs/              # Experiment configs, inheriting from base.yaml
+├── weights/              # Saved model checkpoints (created at training time)
+├── train.py              # Main training / evaluation entry point
+├── dataset.py            # FundusDataset and FundusDatasetMTL
+├── multitask_model.py    # Shared-encoder multi-head MTL model
+├── losses.py             # Loss functions incl. MultiTaskLoss / get_multitask_loss
 ├── requirements.txt
-└── data.yaml # Local dataset path (created by you, see Setup)
+└── data.yaml             # Local dataset path (created by you, see Setup)
+```
 
 ## Dependencies
 
