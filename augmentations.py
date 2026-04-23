@@ -6,8 +6,9 @@ Run directly to visualise all transforms on a sample image:
 import random
 import numpy as np
 import torch
-import torchvision.transforms as T
+import torchvision.transforms.v2 as T
 import torchvision.transforms.functional as F
+from torchvision.transforms import ToPILImage
 from PIL import Image, ImageFilter
 import yaml
 
@@ -40,7 +41,6 @@ class RandomGaussianNoise:
         self.std = std
 
     def __call__(self, tensor):
-        # applied after ToTensor so tensor is in [0,1]
         return (tensor + torch.randn_like(tensor) * self.std).clamp(0, 1)
 
 
@@ -56,11 +56,35 @@ class RandomNonLinearIntensity:
         return Image.fromarray((arr * 255).clip(0, 255).astype(np.uint8))
 
 
+class RandomNonLinearIntensityTTDA:
+    def __init__(self, alpha_range=(0.85, 1.15)):
+        self.alpha_range = alpha_range
+
+    def __call__(self, tensor):
+        alpha = random.uniform(*self.alpha_range)
+        return torch.pow(tensor, alpha)
+    
+class RandomGammaTTDA:
+    def __init__(self, gamma_range=(0.8, 1.2)):
+        self.gamma_range = gamma_range
+
+    def __call__(self, x):
+        x = torch.clamp(x, 0, 1)
+        gamma = random.uniform(*self.gamma_range)
+        return torch.clamp(x.pow(gamma), 0, 1)
+    
+class RandomGaussianNoiseTTDA:
+    def __init__(self, std=0.02):
+        self.std = std
+
+    def __call__(self, x):
+        return (x + torch.randn_like(x) * self.std).clamp(0, 1)
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD  = [0.229, 0.224, 0.225]
-
 
 def get_train_transform(img_size=224):
     return T.Compose([
@@ -68,17 +92,16 @@ def get_train_transform(img_size=224):
         # orientation invariance
         T.RandomHorizontalFlip(),
         T.RandomVerticalFlip(),
-        T.RandomRotation(degrees=15),               # random rotation
+        T.RandomRotation(degrees=15),               
         # photometric — all kept light
-        T.ColorJitter(brightness=0.2, contrast=0.2),# brightness + contrast jitter
-        RandomDefocus(radius=(0.0, 1.5)),           # defocus / blur simulation
-        RandomGamma(gamma_range=(0.85, 1.15)),      # gamma + lighting variation
-        RandomNonLinearIntensity(alpha_range=(0.9, 1.1)),  # non-linear intensity
+        T.ColorJitter(brightness=0.2, contrast=0.2),
+        RandomDefocus(radius=(0.0, 1.5)),           
+        RandomGamma(gamma_range=(0.85, 1.15)),      
+        RandomNonLinearIntensity(alpha_range=(0.9, 1.1)),
         T.ToTensor(),
-        RandomGaussianNoise(std=0.015),             # Gaussian / sensor noise
+        RandomGaussianNoise(std=0.015),            
         T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
-
 
 def get_val_transform(img_size=224):
     return T.Compose([
@@ -87,6 +110,28 @@ def get_val_transform(img_size=224):
         T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
 
+def get_ttda_transform(img_size=224, n_aug=5):
+    ttda_transforms = []
+    for _ in range(n_aug):
+        ttda_transforms.append(
+            T.Compose([
+                T.Resize((img_size, img_size)),
+                T.RandomHorizontalFlip(p=0.5),
+                T.RandomVerticalFlip(p=0.5),
+                T.RandomRotation(10),
+                T.ToTensor(),
+                T.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+            ])
+        )
+    return ttda_transforms
+
+IMAGENET_STD_T  = torch.tensor(IMAGENET_STD).view(3, 1, 1)
+IMAGENET_MEAN_T = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
+
+def tensor_to_pil(t):
+    t = t.cpu() * IMAGENET_STD_T + IMAGENET_MEAN_T
+    t = t.clamp(0, 1)
+    return ToPILImage()(t)
 
 # ── Visualisation (run this file directly) ───────────────────────────────────
 
@@ -141,3 +186,4 @@ if __name__ == "__main__":
     plt.savefig("augmentations_preview.png", dpi=130)
     plt.show()
     print("Saved augmentations_preview.png")
+    

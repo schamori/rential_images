@@ -4,13 +4,14 @@ Each method produces a 3×5 grid: rows = [Input, Attribution, Overlay], cols = g
 Usage:
     python explain.py --checkpoint weights/exp1_weighted_loss.pt
 """
+from email.mime import base
 import argparse, os, warnings
 warnings.filterwarnings("ignore")
 
 import numpy as np, torch, torch.nn as nn
 import matplotlib.pyplot as plt, matplotlib.cm as mcm
 from PIL import Image
-from transformers import ConvNextV2ForImageClassification
+from transformers import ConvNextV2ForImageClassification, ConvNextV2Config
 from augmentations import get_val_transform
 from dataset import TRAIN_IMG, LABELS_CSV
 import pandas as pd

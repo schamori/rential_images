@@ -1,9 +1,0 @@
-# Experiment 4 — Ensemble + weighted CE loss
-# Train N models with different seeds using weighted CE loss,
-# then average logits at inference for the final prediction
-loss: "weighted_ce"
-use_class_weights: true
-sampler: "default"
-ensemble: true
-ensemble_n: 3
-ensemble_seeds: [42, 7, 123]

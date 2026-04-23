@@ -17,6 +17,9 @@ DATA = data_path["data_root"]
 TRAIN_IMG = f"{DATA}/Training/Training_Images"
 LABELS_CSV = f"{DATA}/Training/Training_LabelsDemographic.csv"
 
+TEST_IMG = f"{DATA}/Testing/Testing_Images"
+TEST_LABELS_CSV = f"{DATA}/Testing/Testing_LabelDemographic.csv"
+
 class FundusDataset(Dataset):
     def __init__(self, df, img_dir, img_size=224, augment=False):
         self.df = df.reset_index(drop=True)
@@ -67,8 +70,9 @@ def get_class_weights(df):
     return torch.tensor(weights, dtype=torch.float32)
 
 
-def get_loaders(cfg):
+def get_loaders(cfg, return_test=False):
     df = pd.read_csv(LABELS_CSV)
+    test_df = pd.read_csv(TEST_LABELS_CSV)
     labels = df["myopic_maculopathy_grade"].values
 
     train_idx, val_idx = train_test_split(
@@ -77,10 +81,12 @@ def get_loaders(cfg):
     train_df = df.iloc[train_idx]
     val_df   = df.iloc[val_idx]
 
+
     use_mtl = cfg.get("multitask", False)
     DsClass = FundusDatasetMTL if use_mtl else FundusDataset
     train_ds = DsClass(train_df, TRAIN_IMG, cfg["img_size"], augment=True)
     val_ds   = DsClass(val_df,   TRAIN_IMG, cfg["img_size"], augment=False)
+    test_ds  = DsClass(test_df,  TEST_IMG,  cfg["img_size"], augment=False)
 
     # ── Sampler selection ─────────────────────────────────────────────────────
     sampler = None
@@ -113,6 +119,22 @@ def get_loaders(cfg):
         num_workers=4,
         pin_memory=True,
     )
-    val_loader = DataLoader(val_ds, batch_size=cfg["batch_size"], shuffle=False,
-                            num_workers=4, pin_memory=True)
-    return train_loader, val_loader, df
+    val_loader = DataLoader(
+        val_ds, 
+        batch_size=cfg["batch_size"], 
+        shuffle=False,
+        num_workers=4, 
+        pin_memory=True
+    )
+    test_loader = DataLoader(
+        test_ds,
+        batch_size=cfg["batch_size"],
+        shuffle=False,
+        num_workers=4,
+        pin_memory=True
+    )
+
+    if return_test:
+        return train_loader, val_loader, test_loader, df
+    else:
+        return train_loader, val_loader, df

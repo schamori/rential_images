@@ -63,13 +63,22 @@ class MultiTaskLoss(nn.Module):
  
         # age regression loss (auxiliary, masked for missing)
         if age_valid.sum() > 0:
-            # only compute loss for samples with valid age
+            # fix shape mismatch
+            if age_pred.ndim == 2 and age_pred.shape[1] == 1:
+                age_pred = age_pred.squeeze(1)
+            if age_targets.ndim == 2 and age_targets.shape[1] == 1:
+                age_targets = age_targets.squeeze(1)
+
             age_loss_raw = F.smooth_l1_loss(age_pred, age_targets, reduction="none")
             loss_age = (age_loss_raw * age_valid).sum() / age_valid.sum()
         else:
             loss_age = torch.tensor(0.0, device=cls_logits.device)
  
         # centre prediction loss (auxiliary)
+        if centre_pred.ndim == 2 and centre_pred.shape[1] == 1:
+            centre_pred = centre_pred.squeeze(1)
+        if centre_targets.ndim == 2 and centre_targets.shape[1] == 1:
+            centre_targets = centre_targets.squeeze(1)
         loss_centre = F.binary_cross_entropy_with_logits(
             centre_pred, centre_targets, reduction="mean"
         )
