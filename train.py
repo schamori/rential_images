@@ -52,7 +52,6 @@ def build_model(cfg, num_classes, device):
     hidden_dim = model.classifier.in_features  # no [1] indexing
 
     model.classifier = nn.Sequential(
-        nn.Dropout(p=0.3),
         nn.Linear(hidden_dim, num_classes),
     ).to(device)
     
