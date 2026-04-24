@@ -351,12 +351,26 @@ def _all_methods():
     def _lime_heat(m, t, l):
         # Keep sample count moderate so LIME is feasible inside the full benchmark loop.
         img_uint8 = _to_uint8(_denorm(t))
-        exp = lime_image.LimeImageExplainer(random_state=42).explain_instance(
-            img_uint8,
-            lambda imgs: _predict_for_lime(m, imgs),
-            labels=(int(l),),
-            num_samples=120,
-        )
+        explainer = lime_image.LimeImageExplainer(random_state=42)
+        predict = lambda imgs: _predict_for_lime(m, imgs)
+        common_kwargs = {
+            "labels": (int(l),),
+            "num_samples": 120,
+        }
+        try:
+            exp = explainer.explain_instance(
+                img_uint8,
+                predict,
+                progress_bar=False,
+                **common_kwargs,
+            )
+        except TypeError:
+            # Older LIME versions may not expose progress_bar.
+            exp = explainer.explain_instance(
+                img_uint8,
+                predict,
+                **common_kwargs,
+            )
         heat = np.zeros_like(exp.segments, dtype=np.float32)
         for seg_id, weight in exp.local_exp[int(l)]:
             heat[exp.segments == seg_id] = weight
